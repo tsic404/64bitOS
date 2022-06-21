@@ -7,7 +7,7 @@ OffsetOfLoader  equ     0x00
 RootDirSectors              equ     14
 SectorNumOfRootDirStart     equ     19
 SectorNumOfFAT1Start        equ     1
-SectororBalance             equ     17
+SectorBalance             equ     17
 
     jmp     short   Label_Start
     nop
@@ -67,7 +67,7 @@ Label_Start:
 ; BH=页码。
     mov     ax,     0200h
     mov     bx,     0000h
-    mov     dx,     0000h
+    mov     dx,     0000h   
     int     10h
 
 ;====== display on screen : Start Booting
@@ -116,48 +116,6 @@ Label_Start:
 ;====== search loader.bin
     mov         word    [SectorNo], SectorNumOfRootDirStart
 
-;====== tmp variable
-
-    RootDirSizeForLoop          dw      RootDirSectors
-    SectorNo                    dw      0
-    Odd                         db      0
-
-;====== display message
-
-    StartBootMessage:           db      "Start Boot"
-    NoLoaderMessage:            db      "ERROR:No LOADER Found"
-    LoaderFileName:             db      "Loader BIN",0
-
-;====== read one secroe from floppy
-Func_ReadOneSector:
-
-    push        bp
-    mov         bp,                 sp
-    sub         esp,                2
-    mov         byte    [bp - 2],   cl
-    push        bx
-    mov         bl,                 [BPB_SecPerTrk]
-    div         bl
-    inc         ah
-    mov         cl,                 ah
-    mov         dh,                 al
-    shr         al,                 1
-    mov         ch,                 al
-    and         dh,                 1
-    pop         bx
-    mov         dl,                 [BS_DrvNum]
-
-Label_Go_On_Reading:
-
-    mov         ah,                 2
-    mov         al,                 byte        [ bp - 2 ]
-    int         13h
-    jc Label_Go_On_Reading
-
-    add         esp,                2
-    pop         bp
-    ret
-
 Label_Search_In_Root_Dir_Begin:
 
     cmp         word    [RootDirSizeForLoop],   0
@@ -187,7 +145,6 @@ Label_Cmp_FileName:
     jz          Label_FileName_Found
     dec         cx
     lodsb
-
     cmp         al,                 byte    [es:di]
     jz          Label_Go_On
     jmp         Label_Different
@@ -209,7 +166,8 @@ Label_Goto_Next_sector_In_Root_dir:
     add         word    [SectorNo], 1
     jmp         Label_Search_In_Root_Dir_Begin
 
-;====== display on screen : ERROR: No LOADER Found
+;======  display on screen : ERROR: No LOADER Found
+
 Label_No_LoaderBin:
 
     mov         ax,                 1301h
@@ -224,7 +182,78 @@ Label_No_LoaderBin:
     int         10h
     jmp         $
 
+;====== found loader.bin name in root director struct
+
+Label_FileName_Found:
+
+    mov         ax,                 RootDirSectors
+    and         di,                 0ffe0h
+    add         di,                 01ah
+    mov         cx,                 word    [es:di]
+    push        cx
+    add         cx,                 ax
+    add         cx,                 SectorBalance
+    mov         ax,                 BaseOfLoader
+    mov         es,                 ax
+    mov         bx,                 OffsetOfLoader
+    mov         ax,                 cx
+
+Label_Go_On_Loading_File:
+    push        ax
+    push        bx
+    mov         ah,                 0eh
+    mov         al,                 '.'
+    mov         bl,                 0fh
+    int         10h
+    pop         bx
+    pop         ax
+
+    mov         cl,                 1
+    call        Func_ReadOneSector
+    pop         ax
+    call        Func_GetFATEntry
+    cmp         ax,                 0fffh
+    jz          Label_File_Loaded
+    push        ax
+    mov         dx,                 RootDirSectors
+    add         ax,                 dx
+    add         ax,                 SectorBalance
+    add         bx,                 [BPB_BytesPerSec]
+    jmp         Label_Go_On_Loading_File
+
+Label_File_Loaded:
+
+    jmp         BaseOfLoader:OffsetOfLoader
+
+;====== read one secroe from floppy
+Func_ReadOneSector:
+
+    push        bp
+    mov         bp,                 sp
+    sub         esp,                2
+    mov         byte    [bp - 2],   cl
+    push        bx
+    mov         bl,                 [BPB_SecPerTrk]
+    div         bl
+    inc         ah
+    mov         cl,                 ah
+    mov         dh,                 al
+    shr         al,                 1
+    mov         ch,                 al
+    and         dh,                 1
+    pop         bx
+    mov         dl,                 [BS_DrvNum]
+Label_Go_On_Reading:
+    mov         ah,                 2
+    mov         al,                 byte        [ bp - 2 ]
+    int         13h
+    jc Label_Go_On_Reading
+    add         esp,                2
+    pop         bp
+    ret
+
 ;====== get FAT Entry
+
 Func_GetFATEntry:
 
     push        es
@@ -261,54 +290,22 @@ Label_Even:
     shr         ax,                 4
 
 Label_Even_2:
-
     and         ax,                 0fffh
     pop         bx
     pop         es
     ret
 
-;====== found loader.bin name in root director struct
-Label_FileName_Found:
+;====== tmp variable
 
-    mov         ax,                 RootDirSectors
-    and         di,                 0ffe0h
-    add         di,                 01ah
-    mov         cx,                 word    [es:di]
-    push        cx
-    add         cx,                 ax
-    add         cx,                 SectororBalance
-    mov         ax,                 BaseOfLoader
-    mov         es,                 ax
-    mov         bx,                 OffsetOfLoader
-    mov         ax,                 cx
+    RootDirSizeForLoop          dw      RootDirSectors
+    SectorNo                    dw      0
+    Odd                         db      0
 
-Label_Go_On_Loading_File:
+;====== display message
 
-    push        ax
-    push        bx
-    mov         ah,                 0eh
-    mov         al,                 '.'
-    mov         bl,                 0fh
-    int         10h
-    pop         bx
-    pop         ax
-
-    mov         cl,                 1
-    call        Func_ReadOneSector
-    pop         ax
-    call        Func_GetFATEntry
-    cmp         ax,                 0fffh
-    jz          Label_File_Loaded
-    push        ax
-    mov         dx,                 RootDirSectors
-    add         ax,                 dx
-    add         ax,                 SectororBalance
-    add         bx,                 [BPB_BytesPerSec]
-    jmp         Label_Go_On_Loading_File
-
-Label_File_Loaded:
-
-    jmp         BaseOfLoader:OffsetOfLoader
+    StartBootMessage:           db      "Start Boot"
+    NoLoaderMessage:            db      "ERROR:No LOADER Found"
+    LoaderFileName:             db      "LOADER  BIN",0
 
 ;===== fill zero util whole sector
 
